@@ -1,58 +1,67 @@
 import java.util.*;
 
-class Reservation {
-    String reservationId;
-    String roomType;
-    String roomId;
+class BookingSystem {
 
-    Reservation(String reservationId, String roomType, String roomId) {
-        this.reservationId = reservationId;
-        this.roomType = roomType;
-        this.roomId = roomId;
-    }
-}
-
-class CancellationService {
-
-    private Map<String, Reservation> reservations = new HashMap<>();
+    private Queue<String> bookingQueue = new LinkedList<>();
     private Map<String, Integer> inventory = new HashMap<>();
-    private Stack<String> rollbackStack = new Stack<>();
+    private Set<String> allocatedRooms = new HashSet<>();
 
-    public CancellationService() {
+    public BookingSystem() {
         inventory.put("Single", 2);
         inventory.put("Double", 2);
         inventory.put("Suite", 1);
     }
 
-    public void confirmBooking(String reservationId, String roomType, String roomId) {
-        reservations.put(reservationId, new Reservation(reservationId, roomType, roomId));
-        inventory.put(roomType, inventory.get(roomType) - 1);
-        System.out.println("Booking confirmed: " + reservationId + " RoomID: " + roomId);
+    public synchronized void addRequest(String roomType) {
+        bookingQueue.offer(roomType);
+        System.out.println(Thread.currentThread().getName() + " requested " + roomType);
     }
 
-    public void cancelBooking(String reservationId) {
+    public synchronized void processRequest() {
 
-        if (!reservations.containsKey(reservationId)) {
-            System.out.println("Cancellation failed: Reservation does not exist.");
+        if (bookingQueue.isEmpty()) {
             return;
         }
 
-        Reservation r = reservations.remove(reservationId);
+        String roomType = bookingQueue.poll();
 
-        rollbackStack.push(r.roomId);
+        int available = inventory.getOrDefault(roomType, 0);
 
-        inventory.put(r.roomType, inventory.get(r.roomType) + 1);
+        if (available > 0) {
 
-        System.out.println("Booking cancelled: " + reservationId);
-        System.out.println("Room released: " + r.roomId);
-        System.out.println("Inventory restored for " + r.roomType);
+            String roomId = roomType.substring(0,1).toUpperCase() + (100 + new Random().nextInt(900));
+
+            while (allocatedRooms.contains(roomId)) {
+                roomId = roomType.substring(0,1).toUpperCase() + (100 + new Random().nextInt(900));
+            }
+
+            allocatedRooms.add(roomId);
+
+            inventory.put(roomType, available - 1);
+
+            System.out.println(Thread.currentThread().getName() +
+                    " allocated Room " + roomId + " for " + roomType);
+
+        } else {
+            System.out.println(Thread.currentThread().getName() +
+                    " booking failed for " + roomType + " (No rooms available)");
+        }
+    }
+}
+
+class BookingThread extends Thread {
+
+    private BookingSystem system;
+    private String roomType;
+
+    public BookingThread(BookingSystem system, String roomType) {
+        this.system = system;
+        this.roomType = roomType;
     }
 
-    public void showRollbackHistory() {
-        System.out.println("\nRollback Stack:");
-        for (String id : rollbackStack) {
-            System.out.println(id);
-        }
+    public void run() {
+        system.addRequest(roomType);
+        system.processRequest();
     }
 }
 
@@ -60,15 +69,18 @@ public class BookMyStayApp {
 
     public static void main(String[] args) {
 
-        CancellationService service = new CancellationService();
+        BookingSystem system = new BookingSystem();
 
-        service.confirmBooking("RES101", "Single", "S101");
-        service.confirmBooking("RES102", "Double", "D201");
+        Thread t1 = new BookingThread(system, "Single");
+        Thread t2 = new BookingThread(system, "Single");
+        Thread t3 = new BookingThread(system, "Double");
+        Thread t4 = new BookingThread(system, "Suite");
+        Thread t5 = new BookingThread(system, "Suite");
 
-        service.cancelBooking("RES101");
-
-        service.cancelBooking("RES999");
-
-        service.showRollbackHistory();
+        t1.start();
+        t2.start();
+        t3.start();
+        t4.start();
+        t5.start();
     }
 }
